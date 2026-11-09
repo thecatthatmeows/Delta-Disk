@@ -26,22 +26,27 @@ impl App {
     pub fn new(args: &crate::Args) -> Self {
         let path = args.path.clone();
         let scanner = Scanner::new();
-        let snapshots = scanner.scan(&path, CURRENT_DEPTH, MAX_DEPTH).unwrap();
+        let snapshots = scanner.scan(&path, CURRENT_DEPTH, MAX_DEPTH);
 
-        let state = TableState::default().with_selected(0);
-        let scroll_state = ScrollbarState::new(snapshots.snapshots.len());
-        Self {
-            root_path: path,
+        match snapshots {
+            Ok(snapshots) => {
+                let state = TableState::default().with_selected(0);
+                let scroll_state = ScrollbarState::new(snapshots.snapshots.len());
+                Self {
+                    root_path: path,
 
-            scanner,
-            snapshots,
-            state,
-            scroll_state,
-            exit: false,
+                    scanner,
+                    snapshots,
+                    state,
+                    scroll_state,
+                    exit: false,
 
-            input: Input::default(),
-            show_save_popup: false,
-            should_save: false,
+                    input: Input::default(),
+                    show_save_popup: false,
+                    should_save: false,
+                }
+            }
+            Err(e) => panic!("Error: {:?}", e.raw_os_error()),
         }
     }
 
@@ -186,10 +191,11 @@ impl Widget for &App {
     where
         Self: Sized {
         let title = Line::from(self.root_path.to_str().unwrap());
-        let total_size = self.snapshots.clone().into_iter().map(|ss| {
-            ss.size
-        })
-        .sum();
+        // let total_size: u64 = self.snapshots.clone().into_iter().map(|ss| {
+        //     ss.size
+        // })
+        // .sum();
+        let total_size = self.snapshots.size;
     
         let extra_info_line = vec![
             text::Span::from(" Total disk usage "),

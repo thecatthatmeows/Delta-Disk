@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{io::ErrorKind, path::Path};
 use crate::snapshots::{Snapshot, Snapshots};
 
 pub struct Scanner;
@@ -14,19 +14,61 @@ impl Scanner {
         }
         
         let mut snapshots = Vec::new();
+        let mut unreadable_dirs = 0;
 
         let root = root.as_ref();
-        for entry in std::fs::read_dir(root)? {
-            let entry = entry?;
-            let metadata = entry.metadata()?;
+        let entries = match std::fs::read_dir(root) {
+            Ok(entries) => entries,
+            Err(e) if e.kind() == ErrorKind::PermissionDenied => {
+                let mut result = Snapshots::new(vec![]);
+                result.unreadable_dirs = 1;
+                return Ok(result);
+            }
+            Err(e) => return Err(e),
+        };
+
+        for entry in entries {
+            let entry = match entry {
+                Ok(entry) => entry,
+                Err(_) => continue,
+            };
+
+            let file_type = match entry.file_type() {
+                Ok(file_type) => file_type,
+                Err(_) => continue,
+            };
+
+            if file_type.is_symlink() {
+                continue;
+            }
+
+            let metadata = match entry.metadata() {
+                Ok(metadata) => metadata,
+                Err(e) => {
+                    if file_type.is_dir() && e.kind() == ErrorKind::PermissionDenied {
+                        unreadable_dirs += 1;
+                    }
+                    continue;
+                }
+            };
+
             let path = entry.path();
             let parent_path = root.parent();
 
-            let name = entry.file_name().into_string().unwrap();
             let mut size = metadata.len();
 
             let children = if metadata.is_dir() {
-                Some(self.scan(&path, current_depth + 1, max_depth)?)
+                match self.scan(&path, current_depth + 1, max_depth) {
+                    Ok(children) => {
+                        unreadable_dirs += children.unreadable_dirs;
+                        Some(children)
+                    }
+                    Err(e) if e.kind() == ErrorKind::PermissionDenied => {
+                        unreadable_dirs += 1;
+                        None
+                    }
+                    Err(e) => return Err(e),
+                }
             } else {
                 None
             };
@@ -42,16 +84,18 @@ impl Scanner {
             
             if let Some(parent_path) = parent_path {
                 let snapshot = Snapshot::new(
-                    name, size, metadata.is_dir(), Some(parent_path.to_owned()), children);
+                    path, size, metadata.is_dir(), Some(parent_path.to_owned()), children);
                 snapshots.push(snapshot);
             } else {
                 let snapshot = Snapshot::new(
-                    name, size, metadata.is_dir(), None, children);
+                    path, size, metadata.is_dir(), None, children);
                 snapshots.push(snapshot);
             }
         }
 
-        Ok(Snapshots::new(snapshots))
+        let mut result = Snapshots::new(snapshots);
+        result.unreadable_dirs = unreadable_dirs;
+        Ok(result)
     }
 
     pub fn scan_from_home(&self, current_depth: usize, max_depth: usize) -> Result<Snapshots, std::io::Error> {

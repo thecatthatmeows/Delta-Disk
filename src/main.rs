@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{env::current_dir, path::PathBuf, sync::LazyLock};
 use crate::app::App;
 use clap::Parser;
 
@@ -16,7 +16,11 @@ pub struct Args {
 fn main() -> Result<(), std::io::Error> {
     println!("Hello, world!");
 
-    let args = Args::parse();
+    let mut args = Args::parse();
+    if args.path.as_os_str() == "." {
+        args.path = current_dir()?;
+    }
+
     let mut app = App::new(&args);
     let mut term = ratatui::init();
 

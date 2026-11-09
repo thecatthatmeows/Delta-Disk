@@ -47,13 +47,19 @@ impl Snapshot {
 
 #[derive(Clone, Deserialize, Serialize)]
 pub struct Snapshots {
-    pub snapshots: Vec<Snapshot>
+    pub snapshots: Vec<Snapshot>,
+    pub size: u64,
+    #[serde(default)]
+    pub unreadable_dirs: usize,
 }
 
 impl Snapshots {
     pub fn new(snapshots: Vec<Snapshot>) -> Self {
+        let size: u64 = snapshots.iter().map(|ss| ss.size).sum();
         Self {
-            snapshots
+            snapshots,
+            size,
+            unreadable_dirs: 0,
         }
     }
 
