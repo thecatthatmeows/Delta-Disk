@@ -110,21 +110,18 @@ impl App {
         Ok(())
     }
 
-    pub fn compare_growth(&self) -> Result<(), std::io::Error> {
-
-        Ok(())
-    }
-
     fn go_to_parent(&mut self) {
         // in theory, every snapshot in one frame should have the same parent
-        let ss = &self.snapshots.snapshots[0];
-        let parent_path = &ss.parent_path;
+let     parent_path = &self.snapshots.snapshots[0].parent_path.clone();
 
         match parent_path {
             Some(root) => {
                 let snapshots = self.scanner.scan(root, CURRENT_DEPTH, MAX_DEPTH);
                 match snapshots {
-                    Ok(snapshots) => self.snapshots = snapshots,
+                    Ok(snapshots) => {
+                        self.snapshots = snapshots;
+                        self.root_path = root.to_path_buf();
+                    }
                     Err(e) => {
                         if e.kind() == ErrorKind::NotFound {
                             panic!("Parent dir not found. {:?}", parent_path);
@@ -133,6 +130,7 @@ impl App {
                 }
             }
             None => {
+                let ss = &self.snapshots.snapshots[0];
                 if ss.path == PathBuf::from("/") {
                     eprintln!("Couldn't get parent since this is the `/` directory");
                     panic!()
@@ -143,12 +141,13 @@ impl App {
 
     fn go_to_child(&mut self) {
         let ss_idx = self.state.selected().unwrap();
-        let ss = &self.snapshots.snapshots[ss_idx];
+        let ss = &self.snapshots.snapshots[ss_idx].clone();
         
         if ss.is_dir {
             let path = &ss.path;
             let snapshots = self.scanner.scan(path, CURRENT_DEPTH, MAX_DEPTH).unwrap();
             self.snapshots = snapshots;
+            self.root_path = path.to_path_buf();
         }
     }
 
@@ -202,12 +201,8 @@ impl App {
 
         Ok(())
     }
-}
 
-impl Widget for &App {
-    fn render(self, area: ratatui::prelude::Rect, buf: &mut ratatui::prelude::Buffer)
-    where
-        Self: Sized {
+    fn render_main(&self, area: ratatui::prelude::Rect, buf: &mut ratatui::prelude::Buffer) {
         let title = Line::from(self.root_path.to_str().unwrap());
         // let total_size: u64 = self.snapshots.clone().into_iter().map(|ss| {
         //     ss.size
@@ -253,5 +248,20 @@ impl Widget for &App {
         StatefulWidget::render(scrollbar, area, buf, &mut scroll_state);
             
         self.handle_save_popup(area, buf);
+    }
+
+    fn render_comparison(&self, area: ratatui::prelude::Rect, buf: &mut ratatui::prelude::Buffer) {
+        let title = Line::from(format!("Comparison of {:?}", self.root_path));
+    }
+}
+
+impl Widget for &App {
+    fn render(self, area: ratatui::prelude::Rect, buf: &mut ratatui::prelude::Buffer)
+    where
+        Self: Sized {
+        match self.screen {
+            CurrentScreen::FileExplorer => self.render_main(area, buf),
+            CurrentScreen::Comparison => self.render_comparison(area, buf)
+        }
     }
 }
