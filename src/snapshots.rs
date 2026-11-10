@@ -101,6 +101,7 @@ impl Snapshots {
         for (ss, old_ss)
             in self.snapshots.iter().zip(old_snapshots) {
             // wont compare if it isnt the same snapshot
+            // WARNING: subject to change, names arent reliable for file identity 
             if ss.name != old_ss.name {
                 continue
             }
