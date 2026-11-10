@@ -2,14 +2,20 @@ use std::{fs, io::ErrorKind, path::{Path, PathBuf}, usize::MAX};
 
 use chrono::{DateTime, Utc};
 use ratatui::{DefaultTerminal, Frame, buffer::Buffer, crossterm::{event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers}, terminal::disable_raw_mode}, layout::{Constraint, Rect}, style::{Color, Modifier, Style}, text::{self, Line, Text}, widgets::{self, Borders, ScrollbarOrientation, ScrollbarState, StatefulWidget, TableState, Widget}};
-use tui_input::Input;
 
 use crate::{scanner::Scanner, snapshots::{Snapshots, bytes_to_units}};
 
 const CURRENT_DEPTH: usize = 1;
 const MAX_DEPTH: usize = 100000;
 
+enum CurrentScreen {
+    FileExplorer,
+    Comparison,
+}
+
 pub struct App {
+    screen: CurrentScreen,
+
     root_path: PathBuf,
 
     scanner: Scanner,
@@ -32,6 +38,7 @@ impl App {
                 let state = TableState::default().with_selected(0);
                 let scroll_state = ScrollbarState::new(snapshots.snapshots.len());
                 Self {
+                    screen: CurrentScreen::FileExplorer,
                     root_path: path,
 
                     scanner,
@@ -100,6 +107,11 @@ impl App {
         let home = home::home_dir().unwrap();
         let dir_path = home.join(".ddisk");
         self.snapshots.save(dir_path)?;
+        Ok(())
+    }
+
+    pub fn compare_growth(&self) -> Result<(), std::io::Error> {
+
         Ok(())
     }
 
