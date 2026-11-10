@@ -20,8 +20,8 @@ pub struct App {
 
     scanner: Scanner,
     snapshots: Snapshots,   
-    pub state: TableState,
-    pub scroll_state: ScrollbarState,
+    pub ss_state: TableState,
+    pub ss_scroll_state: ScrollbarState,
     exit: bool,
     
     show_save_popup: bool,
@@ -35,16 +35,16 @@ impl App {
 
         match snapshots {
             Ok(snapshots) => {
-                let state = TableState::default().with_selected(0);
-                let scroll_state = ScrollbarState::new(snapshots.snapshots.len());
+                let ss_state = TableState::default().with_selected(0);
+                let ss_scroll_state = ScrollbarState::new(snapshots.snapshots.len());
                 Self {
                     screen: CurrentScreen::FileExplorer,
                     root_path: path,
 
                     scanner,
                     snapshots,
-                    state,
-                    scroll_state,
+                    ss_state,
+                    ss_scroll_state,
                     exit: false,
 
                     show_save_popup: false,
@@ -55,7 +55,7 @@ impl App {
     }
 
     pub fn next(&mut self) {
-        let i = match self.state.selected() {
+        let i = match self.ss_state.selected() {
             Some(i) => {
                 if i >= self.snapshots.snapshots.len() - 1 {
                     0
@@ -65,12 +65,12 @@ impl App {
             }
             None => 0
         };
-        self.state.select(Some(i));
-        self.scroll_state = self.scroll_state.position(i);
+        self.ss_state.select(Some(i));
+        self.ss_scroll_state = self.ss_scroll_state.position(i);
     }
 
     pub fn previous(&mut self) {
-        let i = match self.state.selected() {
+        let i = match self.ss_state.selected() {
             Some(i) => {
                 if i <= 0 {
                     self.snapshots.snapshots.len() - 1
@@ -80,8 +80,8 @@ impl App {
             }
             None => 0
         };
-        self.state.select(Some(i));
-        self.scroll_state = self.scroll_state.position(i);
+        self.ss_state.select(Some(i));
+        self.ss_scroll_state = self.ss_scroll_state.position(i);
     }
 
     fn handle_save_popup(&self, area: Rect, buf: &mut Buffer) {
@@ -140,7 +140,7 @@ let     parent_path = &self.snapshots.snapshots[0].parent_path.clone();
     }
 
     fn go_to_child(&mut self) {
-        let ss_idx = self.state.selected().unwrap();
+        let ss_idx = self.ss_state.selected().unwrap();
         let ss = &self.snapshots.snapshots[ss_idx].clone();
         
         if ss.is_dir {
@@ -241,8 +241,8 @@ let     parent_path = &self.snapshots.snapshots[0].parent_path.clone();
             .begin_symbol(Some("▲"))
             .end_symbol(Some("▼"));
 
-        let mut table_state = self.state.clone();
-        let mut scroll_state = self.scroll_state.clone();
+        let mut table_state = self.ss_state.clone();
+        let mut scroll_state = self.ss_scroll_state.clone();
 
         StatefulWidget::render(table, area, buf, &mut table_state);
         StatefulWidget::render(scrollbar, area, buf, &mut scroll_state);
