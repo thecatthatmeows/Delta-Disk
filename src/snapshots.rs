@@ -1,8 +1,9 @@
 // take this and compare it to the new and current thing
 // let user set snapshot
 
-use std::{collections::HashMap, io::BufWriter, path::{Path, PathBuf}, vec};
+use std::{collections::HashMap, fs::File, io::BufWriter, path::{Path, PathBuf}, vec};
 
+use chrono::{DateTime, Utc};
 use ratatui::{style::{Color, Style}, text::Span, widgets::{Cell, Row}};
 use serde::{Deserialize, Serialize};
 
@@ -49,6 +50,7 @@ impl Snapshot {
 pub struct Snapshots {
     pub snapshots: Vec<Snapshot>,
     pub size: u64,
+    pub created_at: DateTime<Utc>,
     #[serde(default)]
     pub unreadable_dirs: usize,
 }
@@ -59,16 +61,20 @@ impl Snapshots {
         Self {
             snapshots,
             size,
+            created_at: Utc::now(),
             unreadable_dirs: 0,
         }
     }
 
+    /// dir_path, as in Directory Path, dont mistake it for output file.
     pub fn save<T: AsRef<Path>>(&self, dir_path: T) -> Result<(), std::io::Error> {
         let dir_path = dir_path.as_ref();
         if !std::fs::exists(&dir_path)? {
             std::fs::create_dir(&dir_path)?;
         }
-        let file = std::fs::File::create(&dir_path.join("checkpoint.json"))?;
+        let datetime = self.created_at.to_string();
+        let out_file = format!("{}{}.json", datetime, "_checkpoint");
+        let file = std::fs::File::create(&dir_path.join(out_file))?;
         let writer = BufWriter::new(file);
 
         let mut saved = HashMap::new();
@@ -77,6 +83,33 @@ impl Snapshots {
         }
         serde_json::to_writer_pretty(writer, &saved)?;
         Ok(())
+    }
+
+    pub fn load<T: AsRef<Path>>(&self, dir_path: T) -> Result<Self, std::io::Error> {
+        let dir_path = dir_path.as_ref();
+        let file = File::open(dir_path)?;
+        let snapshots: Snapshots = serde_json::from_reader(file)?;
+        
+        Ok(snapshots)
+    }
+
+    /// old_snapshot_file can be found in ~/.ddisk/
+    pub fn compare_growth<T: AsRef<Path>>(&self, old_snapshot_file: T) -> Result<HashMap<PathBuf, i64>, std::io::Error> {
+        let old_snapshots = self.load(old_snapshot_file)?;
+
+        let mut comparisons: HashMap<PathBuf, i64> = HashMap::new();
+        for (ss, old_ss)
+            in self.snapshots.iter().zip(old_snapshots) {
+            // wont compare if it isnt the same snapshot
+            if ss.name != old_ss.name {
+                continue
+            }
+            let comparison = (ss.size as i128) - (old_ss.size as i128);
+            let comparison = comparison as i64;
+            comparisons.insert(ss.path.clone(), comparison);
+        }
+
+        Ok(comparisons)
     }
 
     pub fn to_rows(&self) -> Vec<Row<'_>> {

@@ -1,6 +1,7 @@
-use std::{io::ErrorKind, path::PathBuf, usize::MAX};
+use std::{fs, io::ErrorKind, path::{Path, PathBuf}, usize::MAX};
 
-use ratatui::{DefaultTerminal, Frame, buffer::Buffer, crossterm::{event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers}, terminal::disable_raw_mode}, layout::{Constraint, Rect}, style::{Color, Modifier, Style}, text::{self, Line}, widgets::{self, Borders, ScrollbarOrientation, ScrollbarState, StatefulWidget, TableState, Widget}};
+use chrono::{DateTime, Utc};
+use ratatui::{DefaultTerminal, Frame, buffer::Buffer, crossterm::{event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers}, terminal::disable_raw_mode}, layout::{Constraint, Rect}, style::{Color, Modifier, Style}, text::{self, Line, Text}, widgets::{self, Borders, ScrollbarOrientation, ScrollbarState, StatefulWidget, TableState, Widget}};
 use tui_input::Input;
 
 use crate::{scanner::Scanner, snapshots::{Snapshots, bytes_to_units}};
@@ -17,9 +18,7 @@ pub struct App {
     pub scroll_state: ScrollbarState,
     exit: bool,
     
-    input: Input,
     show_save_popup: bool,
-    should_save: bool,
 }
 
 impl App {
@@ -41,9 +40,7 @@ impl App {
                     scroll_state,
                     exit: false,
 
-                    input: Input::default(),
                     show_save_popup: false,
-                    should_save: false,
                 }
             }
             Err(e) => panic!("Error: {:?}", e.raw_os_error()),
@@ -85,16 +82,25 @@ impl App {
             let centered_area = area.centered(Constraint::Percentage(40), Constraint::Percentage(20));
             let popup_area = Rect::new(centered_area.x, centered_area.y, centered_area.width, centered_area.height);
             let popup_block = widgets::Block::new()
-                .title("Are you sure you want to save?")
+                .title_top("Are you sure you want to save?")
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(Color::Black))
                 .style(Style::default().bg(Color::White).fg(Color::Black));
 
-            let input = widgets::Paragraph::new(self.input.value())
+            let input = widgets::Paragraph::new(vec![
+                Line::from("[Y]es | [N]o")
+            ])
                 .block(popup_block);
 
             Widget::render(input, popup_area, buf);
         }
+    }
+
+    pub fn save(&mut self) -> Result<(), std::io::Error> {
+        let home = home::home_dir().unwrap();
+        let dir_path = home.join(".ddisk");
+        self.snapshots.save(dir_path)?;
+        Ok(())
     }
 
     fn go_to_parent(&mut self) {
@@ -163,11 +169,11 @@ impl App {
     fn handle_key_event_press(&mut self, key_event: KeyEvent) -> std::io::Result<()> {
         if self.show_save_popup {
             match key_event.code {
-                KeyCode::Enter => {
-                    self.should_save = true;
+                KeyCode::Enter | KeyCode::Char('y') => {
                     self.show_save_popup = false;
+                    self.save()?;
                 }
-                KeyCode::Esc => self.show_save_popup = false,
+                KeyCode::Esc | KeyCode::Char('n') => self.show_save_popup = false,
                 _ => ()
             }
         } else {
