@@ -1,7 +1,7 @@
 // take this and compare it to the new and current thing
 // let user set snapshot
 
-use std::{collections::HashMap, fs::File, io::BufWriter, path::{Path, PathBuf}, vec};
+use std::{collections::HashMap, fs::File, io::{BufWriter, Error, ErrorKind}, path::{Path, PathBuf}, vec};
 
 use chrono::{DateTime, Utc};
 use ratatui::{style::{Color, Style}, text::Span, widgets::{Cell, Row}};
@@ -20,7 +20,24 @@ pub fn bytes_to_units(bytes: u64) -> String {
     format!("{}{}", final_bytes, units[div_count])
 }
 
+/// returns (is_neg, str)
+pub fn ibytes_to_units(bytes: i64) -> (bool, String) {
+    let is_neg = bytes.is_negative();
+    let bytes = bytes.abs();
+    let mut final_bytes = bytes;
+    let mut div_count = 0;
+    let units = ["B", "KB", "MB", "GB", "TB"];
+
+    while final_bytes >= 1024 {
+        final_bytes /= 1024;
+        div_count+=1;
+    }
+
+    (is_neg, format!("{}{}", final_bytes, units[div_count]))
+}
+
 /// size in bytes
+/// theoretically, they should all have the same parent
 #[derive(Clone, Deserialize, Serialize)]
 pub struct Snapshot {
     pub path: PathBuf,
@@ -49,6 +66,7 @@ impl Snapshot {
 #[derive(Clone, Deserialize, Serialize)]
 pub struct Snapshots {
     pub snapshots: Vec<Snapshot>,
+    pub path: Option<PathBuf>,
     pub size: u64,
     pub created_at: DateTime<Utc>,
     #[serde(default)]
@@ -58,8 +76,16 @@ pub struct Snapshots {
 impl Snapshots {
     pub fn new(snapshots: Vec<Snapshot>) -> Self {
         let size: u64 = snapshots.iter().map(|ss| ss.size).sum();
+        let path: Option<PathBuf> = {
+            if snapshots.is_empty() {
+                None
+            } else {
+                snapshots[0].parent_path.clone()
+            }
+        };
         Self {
             snapshots,
+            path,
             size,
             created_at: Utc::now(),
             unreadable_dirs: 0,
@@ -77,51 +103,83 @@ impl Snapshots {
         let file = std::fs::File::create(&dir_path.join(out_file))?;
         let writer = BufWriter::new(file);
 
-        let mut saved = HashMap::new();
-        for ss in &self.snapshots {
-            saved.insert(ss.name.clone(), ss);
-        }
-        serde_json::to_writer_pretty(writer, &saved)?;
+        serde_json::to_writer_pretty(writer, &self)?;
         Ok(())
     }
 
-    pub fn load<T: AsRef<Path>>(&self, dir_path: T) -> Result<Self, std::io::Error> {
-        let dir_path = dir_path.as_ref();
-        let file = File::open(dir_path)?;
-        let snapshots: Snapshots = serde_json::from_reader(file)?;
-        
+    /// file_path, as in File Path, dont mistake it for input directory.
+    pub fn load<T: AsRef<Path>>(&self, file_path: T) -> Result<Self, std::io::Error> {
+        let file_path = file_path.as_ref();
+        if file_path.is_dir() { 
+            return Err(
+                Error::new(ErrorKind::Unsupported, "File couldn't be loaded cuz it was a direcotry")
+            ); 
+        }
+        let file = File::open(file_path)?;
+        let snapshots: Snapshots = serde_json::from_reader(file)
+            .map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
+
         Ok(snapshots)
     }
 
+    /// finds the difference between the stored and current snapshot
     /// old_snapshot_file can be found in ~/.ddisk/
-    pub fn compare_growth<T: AsRef<Path>>(&self, old_snapshot_file: T) -> Result<HashMap<PathBuf, i64>, std::io::Error> {
-        let old_snapshots = self.load(old_snapshot_file)?;
-
-        let mut comparisons: HashMap<PathBuf, i64> = HashMap::new();
+    pub fn compare_growth(&self, old_snapshots: &Snapshots) -> Result<HashMap<String, i64>, std::io::Error> {
+        let mut differences: HashMap<String, i64> = HashMap::new();
         for (ss, old_ss)
             in self.snapshots.iter().zip(old_snapshots) {
             // wont compare if it isnt the same snapshot
             // WARNING: subject to change, names arent reliable for file identity 
-            if ss.name != old_ss.name {
-                continue
-            }
-            let comparison = (ss.size as i128) - (old_ss.size as i128);
-            let comparison = comparison as i64;
-            comparisons.insert(ss.path.clone(), comparison);
+            if ss.name != old_ss.name { continue }
+            let diff = (ss.size as i128) - (old_ss.size as i128);
+            let diff = diff as i64;
+            differences.insert(ss.name.clone(), diff);
         }
 
-        Ok(comparisons)
+        Ok(differences)
+    }
+
+    pub fn compare_growth_to_rows(&self, old_snapshots: &Snapshots) -> Result<Vec<Row<'_>>, std::io::Error> {
+        let diffs = self.compare_growth(old_snapshots)?;
+        let mut rows = Vec::new();
+        for (path, diff) in diffs {
+            let row = Row::new(vec![
+                Cell::from(path),
+                Cell::from(diff.to_string()),
+            ]);
+            rows.push(row);
+        }
+        
+        Ok(rows)
+    }
+
+    pub fn compare_growth_to_rows_unit(&self, old_snapshots: &Snapshots) -> Result<Vec<Row<'_>>, std::io::Error> {
+        let diffs = self.compare_growth(old_snapshots)?;
+        let mut rows = Vec::new();
+        for (path, diff) in diffs {
+            let (is_diff_neg, mut diff) = ibytes_to_units(diff);
+            if diff == "0B" { diff = "No changes".to_string(); }
+            if is_diff_neg { diff = format!("-{}", diff); }
+
+            let row = Row::new(vec![
+                Cell::from(path),
+                Cell::from(diff.to_string()),
+            ]);
+            rows.push(row);
+        }
+        
+        Ok(rows)
     }
 
     pub fn to_rows(&self) -> Vec<Row<'_>> {
         self.snapshots
             .iter()
-            .map(|ss|
+            .map(|ss| {
                 Row::new(vec![
                     Cell::from(ss.name.clone()),
                     Cell::from(ss.size.to_string())
                 ])
-            )
+            })
             .collect()
     }
 

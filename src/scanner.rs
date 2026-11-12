@@ -53,7 +53,7 @@ impl Scanner {
             };
 
             let path = entry.path();
-            let parent_path = root.parent();
+            let parent_path = path.parent();
 
             let mut size = metadata.len();
 
@@ -84,11 +84,11 @@ impl Scanner {
             
             if let Some(parent_path) = parent_path {
                 let snapshot = Snapshot::new(
-                    path, size, metadata.is_dir(), Some(parent_path.to_owned()), children);
+                    &path, size, metadata.is_dir(), Some(parent_path.to_owned()), children);
                 snapshots.push(snapshot);
             } else {
                 let snapshot = Snapshot::new(
-                    path, size, metadata.is_dir(), None, children);
+                    &path, size, metadata.is_dir(), None, children);
                 snapshots.push(snapshot);
             }
         }
